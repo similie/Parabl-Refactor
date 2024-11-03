@@ -1,11 +1,11 @@
 const uuid = require('uuid');
 const validator = require('validator');
-const Q = require('q');
-const _lo = require('lodash');
+const commonUtils = require('../utils/common')
 const crypto = require('crypto');
 const SailsExtensions = require('../services/SailsExtensions');
 const { TimeUtils, SqlUtils, Pdf } = require('similie-api-services');
 const CacheStore = require('../services/CacheStore');
+const { resolve } = require('path');
 const tz = TimeUtils.constants.timeZone;
 const now_ = TimeUtils.constants.now_;
 const TimePeriod = TimeUtils.constants.ENUMS.timePeriods;
@@ -265,16 +265,16 @@ module.exports = {
     },
 
     easterEgg: function() {
-      if (!_.size(this.tags)) {
+      if (!commonUtils.size(this.tags)) {
         return;
       }
       let eggHunt;
-      _.each(this.tags, t => {
+      commonUtils.each(this.tags, t => {
         if (t.meta && t.meta.easter_egg) {
           const frequency = t.meta.frequency ? parseInt(t.meta.frequency) : 10;
           t.meta.frequency = frequency;
-          t.meta.random = _.random(1, frequency);
-          if (t.meta.random === _.random(1, frequency)) {
+          t.meta.random = commonUtils.random(1, frequency);
+          if (t.meta.random === commonUtils.random(1, frequency)) {
             eggHunt = t.meta.easter_egg;
           }
         }
@@ -389,7 +389,7 @@ module.exports = {
           variables: Email.variables.invite.key,
           tags: ['user requested', 'password reset']
         });
-        (cb || _.noop)(err);
+        (cb || commonUtils.noop)(err);
       });
     },
     /*
@@ -458,12 +458,12 @@ module.exports = {
     "u"."schema",
     "u"."first_name",
     "u"."last_name",
-    "ns"."meta" ->> 'oracle' :: TEXT AS oracles 
+    "ns"."meta" ->> 'oracle' :: TEXT AS oracles
   FROM
     "nodeschema" "ns"
-    JOIN "user" "u" ON ( "ns"."id" = "u"."schema" ) 
+    JOIN "user" "u" ON ( "ns"."id" = "u"."schema" )
   WHERE
-    "ns"."user_assigned" = TRUE 
+    "ns"."user_assigned" = TRUE
     AND "ns"."meta" -> 'oracle' IS NOT NULL
     AND "ns"."domain" %s ORDER BY "id" ASC LIMIT %s;`,
       domainId ? escape('=  %s', domainId) : 'IS NULL',
@@ -557,7 +557,7 @@ module.exports = {
     if (!user.schema) {
       return 'user';
     }
-    if (_.isObject(user.schema)) {
+    if (commonUtils.isObject(user.schema)) {
       return user.schema.name || '____EMPTY____';
     }
     const sId = User.getId(user.schema);
@@ -582,7 +582,7 @@ module.exports = {
   buildPeopleQuery: function(params) {
     const schemas = [];
     let hasNull = false;
-    _.each(params.schema, s => {
+    commonUtils.each(params.schema, s => {
       if (s === null) {
         hasNull = true;
       } else {
@@ -590,7 +590,7 @@ module.exports = {
       }
     });
     let queryString = '';
-    if (!_.size(schemas) && !hasNull) {
+    if (!commonUtils.size(schemas) && !hasNull) {
       return queryString;
     }
     // setInString
@@ -599,7 +599,7 @@ module.exports = {
       queryString += `("schema" IS NULL `;
     }
 
-    if (_.size(schemas)) {
+    if (commonUtils.size(schemas)) {
       queryString += `${hasNull ? 'OR ' : '('}"schema" ${SqlUtils.setInString(
         schemas
       )}) `;
@@ -607,12 +607,12 @@ module.exports = {
       queryString += ') ';
     }
 
-    if ((hasNull || _.size(schemas)) && _.size(params.or)) {
+    if ((hasNull || commonUtils.size(schemas)) && commonUtils.size(params.or)) {
       queryString += `AND (${SqlUtils.generateOrQueryString(params.or)})`;
       delete params.or;
     }
 
-    if ((hasNull || _.size(schemas)) && _.size(params)) {
+    if ((hasNull || commonUtils.size(schemas)) && commonUtils.size(params)) {
       queryString += this.buildWhereNotInQuery(params);
     }
 
@@ -620,7 +620,7 @@ module.exports = {
   },
 
   byTags: async function(tags = [], archived = false) {
-    if (!_.size(tags)) {
+    if (!commonUtils.size(tags)) {
       throw new Error('Error: Tags required');
     }
     const collection = [
@@ -644,8 +644,8 @@ module.exports = {
       type: type,
       id: user.id,
       name: User.fullName(user),
-      email: _.isArray(user.email) ? Contact.getPrimary(user) : user.email,
-      phone: _.isArray(user.phone)
+      email: commonUtils.isArray(user.email) ? Contact.getPrimary(user) : user.email,
+      phone: commonUtils.isArray(user.phone)
         ? Contact.getPrimary(user, 'phone')
         : user.phone,
       language:
@@ -667,13 +667,13 @@ module.exports = {
   },
 
   mergeUserTypes: function(users) {
-    const byType = _lo.groupBy(users, 'type');
+    const byType = commonUtils.groupBy(users, 'type');
     const map = {};
     const send = [];
     for (const type in byType) {
       const users = byType[type];
       map[type] = {};
-      for (let i = 0; i < _.size(users); i++) {
+      for (let i = 0; i < commonUtils.size(users); i++) {
         const user = users[i];
         const uId = User.getId(user);
         if (!map[type][uId]) {
@@ -699,7 +699,7 @@ module.exports = {
 
     if (split.length === 1) {
       const fill = [];
-      _.times(3, () => fill.push(search));
+      commonUtils.times(3, () => fill.push(search));
       send.push(...fill);
     } else if (split.length === 2) {
       send.push(...[split[0], split[1], search]);
@@ -772,14 +772,14 @@ module.exports = {
         '_',
         regexp_replace ( LOWER ( middle_name ), ' ', '_', 'g' ),
         '_',
-        regexp_replace ( LOWER ( last_name ), ' ', '_', 'g' ) 
-      ) AS "_full_name", 
+        regexp_replace ( LOWER ( last_name ), ' ', '_', 'g' )
+      ) AS "_full_name",
       concat (
         regexp_replace ( LOWER ( first_name ), ' ', '_', 'g' ),
         '_',
-        regexp_replace ( LOWER ( last_name ), ' ', '_', 'g' ) 
-      ) AS "_fist_last_name", 
-    "us".* 
+        regexp_replace ( LOWER ( last_name ), ' ', '_', 'g' )
+      ) AS "_fist_last_name",
+    "us".*
     FROM
       "public"."user" "us"${
         domain
@@ -840,8 +840,8 @@ module.exports = {
     const q = this.generateNameSearchQuery(query);
     const _q = this.wrapUserQueryForIdsOnly(q);
     const results = await User.queryAsync(_q);
-    const ids = _.pluck(results.rows, 'id');
-    if (!_.size(ids)) {
+    const ids = commonUtils.pluck(results.rows, 'id');
+    if (!commonUtils.size(ids)) {
       return [];
     }
     return User.find()
@@ -987,26 +987,26 @@ module.exports = {
    *
    */
   getDomainRoles: async function(userModels) {
-    const uIds = _.pluck(userModels, 'id');
-    if (!_.size(uIds)) {
+    const uIds = commonUtils.pluck(userModels, 'id');
+    if (!commonUtils.size(uIds)) {
       return userModels;
     }
     const roles = await DomainRole.find({
       user: uIds
     });
 
-    if (!_.size(roles)) {
+    if (!commonUtils.size(roles)) {
       return userModels;
     }
 
     const roleCache = {};
-    _.each(roles, function(role) {
+    commonUtils.each(roles, function(role) {
       roleCache[role.user] = roleCache[role.user] || {};
       roleCache[role.user][role.domain] = role.role;
     });
-    _.each(userModels, function(user) {
+    commonUtils.each(userModels, function(user) {
       const cached = roleCache[user.id];
-      _.each(user.domains, function(domain) {
+      commonUtils.each(user.domains, function(domain) {
         domain.role = cached[domain.id];
       });
     });
@@ -1054,10 +1054,10 @@ module.exports = {
       }
     });
     const dRchache = {};
-    _.each(dRs, function(dr) {
+    commonUtils.each(dRs, function(dr) {
       dRchache[dr.user] = dr.role;
     });
-    _.each(userModels, function(u) {
+    commonUtils.each(userModels, function(u) {
       if (dRchache[u.id]) {
         u.role = dRchache[u.id];
       } else {
@@ -1151,9 +1151,9 @@ module.exports = {
   setGlobalMeta: async function(values, whereString, ...avoid) {
     let idString = '';
     whereString = whereString || '';
-    if (_.size(avoid)) {
+    if (commonUtils.size(avoid)) {
       const ids = [];
-      _.each(avoid, a => {
+      commonUtils.each(avoid, a => {
         ids.push(User.getId(a));
       });
       idString = `"id" NOT ${SqlUtils.setInString(ids)}`;
@@ -1230,66 +1230,66 @@ module.exports = {
   },
 
   hasAccess: function(self, params, access) {
-    if (!_.size(access) || User.is(self, Roles.SIMILIE_ADMIN)) {
+    if (!commonUtils.size(access) || User.is(self, Roles.SIMILIE_ADMIN)) {
       return true;
     }
 
     const clone = Utils.stripObjects(access);
-    const passports = _.where(clone, params);
+    const passports = commonUtils.where(clone, params);
 
-    if (!_.size(passports)) {
+    if (!commonUtils.size(passports)) {
       return true;
     }
 
     let hasAccess = false;
 
-    _.each(passports, pass => {
+    commonUtils.each(passports, pass => {
       const users = pass.users;
       const roles = pass.roles;
       const tags = pass.tags;
 
-      if (!_.size(users) && !_.size(roles) && !_.size(tags)) {
+      if (!commonUtils.size(users) && !commonUtils.size(roles) && !commonUtils.size(tags)) {
         hasAccess = true;
         return;
       }
 
-      if (_.contains(users, self.id)) {
+      if (commonUtils.contains(users, self.id)) {
         hasAccess = true;
         return;
       }
 
-      if (_.contains(roles, self.role)) {
+      if (commonUtils.contains(roles, self.role)) {
         hasAccess = true;
         return;
       }
       // we can make elements hidden to a site ADMIN
       if (
-        _.size(roles) === 1 &&
-        _.contains(roles, Roles.SIMILIE_ADMIN) &&
-        _.contains(roles, self.role)
+        commonUtils.size(roles) === 1 &&
+        commonUtils.contains(roles, Roles.SIMILIE_ADMIN) &&
+        commonUtils.contains(roles, self.role)
       ) {
         hasAccess = true;
         return;
       }
 
       if (
-        _.size(roles) === 1 &&
+        commonUtils.size(roles) === 1 &&
         User.is(self, Roles.SITE_ADMIN) &&
-        !_.contains(roles, Roles.SIMILIE_ADMIN)
+        !commonUtils.contains(roles, Roles.SIMILIE_ADMIN)
       ) {
         hasAccess = true;
         return;
       }
 
       // basically we can block site admins but add other users by selecting them specifically or with tags
-      if (_.size(roles) !== 1 && User.is(self, Roles.SITE_ADMIN)) {
+      if (commonUtils.size(roles) !== 1 && User.is(self, Roles.SITE_ADMIN)) {
         hasAccess = true;
         return;
       }
 
-      const tIds = _.pluck(self.tags, 'id');
-      _.each(tIds, t => {
-        if (_.contains(tags, t)) {
+      const tIds = commonUtils.pluck(self.tags, 'id');
+      commonUtils.each(tIds, t => {
+        if (commonUtils.contains(tags, t)) {
           hasAccess = true;
         }
       });
@@ -1400,7 +1400,7 @@ module.exports = {
 
   killSingleSession: async function(user) {
     const sessions = await UserSession.find().where({ user: User.getId(user) });
-    for (let i = 0; i < _.size(sessions); i++) {
+    for (let i = 0; i < commonUtils.size(sessions); i++) {
       const sess = sessions[i];
       if (!sess || !sess.session_key) {
         continue;
@@ -1578,7 +1578,7 @@ module.exports = {
       _user.site_role = role;
     }
     let updatedUser = await User.createWithDomain(_user, domain, true);
-    if (_.isArray(updatedUser)) {
+    if (commonUtils.isArray(updatedUser)) {
       updatedUser = updatedUser.pop();
     }
 
@@ -1651,11 +1651,11 @@ module.exports = {
   },
 
   afterDestroy: async function(value, next) {
-    _.each(_.isArray(value) ? value : [value], v => {
+    commonUtils.each(commonUtils.isArray(value) ? value : [value], v => {
       const id = User.getId(v);
       DomainRole.destroy({
         user: id
-      }).exec(_.noop);
+      }).exec(commonUtils.noop);
     });
     next();
   },
@@ -1666,7 +1666,7 @@ module.exports = {
       socket_id: { '!': null }
     });
 
-    for (let i = 0; i < _.size(sessions); i++) {
+    for (let i = 0; i < commonUtils.size(sessions); i++) {
       const session = sessions[i];
       sails.sockets.broadcast(session.socket_id, message, params);
     }
@@ -1841,7 +1841,7 @@ module.exports = {
       .catch(next);
   },
 
-  finishActivation: async function(params, user, cb = _.noop) {
+  finishActivation: async function(params, user, cb = commonUtils.noop) {
     const password = params.password;
     const userID = User.getId(user);
     delete params.password;
@@ -1934,7 +1934,7 @@ module.exports = {
   resetLocalPassword: async function(user, password) {
     await this.replacePassword(user, password);
 
-    if (_.isObject(user)) {
+    if (commonUtils.isObject(user)) {
       user.passports.add(Model.getId(passport));
       await User.saveAsync(user);
     }
@@ -1943,7 +1943,7 @@ module.exports = {
   },
 
   pullPassports: async function(user) {
-    const passports = _.where(user.passports, {
+    const passports = commonUtils.where(user.passports, {
       protocol: 'local',
       inactive: false
     });
@@ -2007,41 +2007,41 @@ module.exports = {
     const domain = dependents.domain;
     const isDomainAdmin = User.is(user, Roles.DOMAIN_ADMIN) && !domain;
 
-    return Q.fcall(() => {
-      const deferred = Q.defer();
-      let q = `SELECT
-        count(*) AS total_users,
-        count(nullif(active, false)) AS active,
-        count(nullif(active, true)) AS not_active
-      FROM "user" `;
+    const queryFunc1 = () => {
+      return new Promise((resolve, reject) => {
+        let q = `SELECT
+          count(*) AS total_users,
+          count(nullif(active, false)) AS active,
+          count(nullif(active, true)) AS not_active
+        FROM "user" `;
 
-      if (!isDomainAdmin) {
-        q += `WHERE ${SqlUtils.formatDomainQuery(
-          domain,
-          'last_domain'
-        )} AND role < ${Roles.DOMAIN_ADMIN}`;
-      }
+        if (!isDomainAdmin) {
+          q += `WHERE ${SqlUtils.formatDomainQuery(
+            domain,
+            'last_domain'
+          )} AND role < ${Roles.DOMAIN_ADMIN}`;
+        }
 
-      q += ';';
+        q += ';';
 
-      sails.models.user.query(
-        escape(q),
-        (err, result) => {
-          if (err) {
-            throw new Error(err);
-          }
+        sails.models.user.query(
+          escape(q),
+          (err, result) => {
+            if (err) {
+              throw new Error(err);
+            }
 
-          reporting.counts = result.rows;
+            reporting.counts = result.rows;
 
-          deferred.resolve(reporting);
-        },
-        deferred.reject
-      );
-      return deferred.promise;
-      // SELECT count(*) as total_users, count(nullif(active, false)) as active, count(nullif(active, true)) as not_active FROM "user"
-    })
-      .then(() => {
-        const deferred = Q.defer();
+            resolve(reporting);
+          },
+          reject
+        );
+      })
+    }
+
+    const queryFunc2 = () => {
+      return new Promise((resolve, reject) => {
         let q = `SELECT
           id,
           email,
@@ -2074,111 +2074,107 @@ module.exports = {
 
             reporting.activities = result.rows;
 
-            deferred.resolve(reporting);
+            resolve(reporting);
           },
-          deferred.reject
+          reject
         );
-        return deferred.promise;
       })
-      .then(() => {
-        const deferred = Q.defer();
+    }
+
+    const queryFunc3 = () => {
+      return new Promise((resolve, reject) => {
         const schema = dependents.schema;
+        const tables = dependents.tables;
+        const names = commonUtils.pluck(tables, 'table_name');
+        const template = commonUtils.template(
+          'SELECT count("observer") As count, "observer", \'<%=table_name%>\' As table_name FROM "<%=schema%>".<%=table_name%> GROUP BY 2'
+        );
+        let concat = Utils.concatTableNames(names, template, schema);
 
-        Q.fcall(() => {
-          return dependents;
-        })
-          .then(dependents => {
-            const tables = dependents.tables;
-            const names = _.pluck(tables, 'table_name');
-            const template = _.template(
-              'SELECT count("observer") As count, "observer", \'<%=table_name%>\' As table_name FROM "<%=schema%>".<%=table_name%> GROUP BY 2'
-            );
-            let concat = Utils.concatTableNames(names, template, schema);
-            const deferred = Q.defer();
+        if (!concat) {
+          resolve([]);
+          return;
+        }
 
-            if (!concat) {
-              deferred.resolve([]);
-              return deferred.promise;
-            }
+        concat += 'ORDER BY table_name ASC, "count" DESC;';
+        Model.query(escape(concat), (err, result) => {
+          if (err) {
+            return reject(err);
+          }
 
-            concat += 'ORDER BY table_name ASC, "count" DESC;';
-            Model.query(escape(concat), (err, result) => {
-              if (err) {
-                return deferred.reject(err);
+          resolve(
+            (
+              result || {
+                rows: []
               }
+            ).rows
+          );
+        });
+      })
+    }
 
-              deferred.resolve(
-                (
-                  result || {
-                    rows: []
-                  }
-                ).rows
-              );
-            });
+    const queryFunc4 = (result) => {
+      const query =
+          'SELECT sum(g.count) as activity_total, g.observer, u.first_name, u.last_name, u.username, u.email, u.role, u.avatar::jsonb FROM json_populate_recordset(NULL::"public".query_recordset, \'%s\') as g JOIN public.user as u ON (u.id = g.observer) GROUP BY 2,3,4,5,6,7,8 ORDER BY activity_total DESC;';
+      if (!result || !commonUtils.size(result)) {
+        resolve({
+          nodes: result,
+          user: []
+        });
+        return;
+      }
 
-            return deferred.promise;
-          })
-          .then(result => {
-            const query =
-              'SELECT sum(g.count) as activity_total, g.observer, u.first_name, u.last_name, u.username, u.email, u.role, u.avatar::jsonb FROM json_populate_recordset(NULL::"public".query_recordset, \'%s\') as g JOIN public.user as u ON (u.id = g.observer) GROUP BY 2,3,4,5,6,7,8 ORDER BY activity_total DESC;';
+      Model.query(escape(query, JSON.stringify(result)), (err, r) => {
+        if (err) {
+          reject(err);
+          return;
+        }
 
-            const deferred = Q.defer();
-
-            if (!result || !_.size(result)) {
-              return deferred.resolve({
-                nodes: result,
-                user: []
-              });
+        resolve({
+          users: result,
+          nodes: (
+            r || {
+              rows: []
             }
+          ).rows
+        });
+      });
+    }
 
-            Model.query(escape(query, JSON.stringify(result)), (err, r) => {
-              if (err) {
-                return deferred.reject(err);
-              }
+    const queryFunc5 = (payload) => {
+      if (!payload || !commonUtils.size(payload.nodes)) {
+        resolve(reporting);
+        return;
+      }
 
-              deferred.resolve({
-                users: result,
-                nodes: (
-                  r || {
-                    rows: []
-                  }
-                ).rows
-              });
-            });
+      const send = [];
+      const order = commonUtils.groupBy(payload.nodes, 'observer');
+      commonUtils.each(order, (o, uId) => {
+        const user = o.pop() || {};
 
-            return deferred.promise;
-          })
-          .then(payload => {
-            if (!payload || !_.size(payload.nodes)) {
-              return deferred.resolve(reporting);
-            }
+        user.nodes = {};
 
-            const send = [];
-            const order = _lo.groupBy(payload.nodes, 'observer');
-            _.each(order, (o, uId) => {
-              const user = o.pop() || {};
+        const observer = commonUtils.where(payload.users, {
+          observer: parseInt(uId)
+        });
+        commonUtils.each(observer, p => {
+          user.nodes[p.table_name] = p.count;
+        });
 
-              user.nodes = {};
+        send.push(user);
+      });
+      reporting.imports = send;
+      resolve(reporting)
+    }
 
-              const observer = _.where(payload.users, {
-                observer: parseInt(uId)
-              });
-              _.each(observer, p => {
-                user.nodes[p.table_name] = p.count;
-              });
-
-              send.push(user);
-            });
-            reporting.imports = send;
-            deferred.resolve(reporting);
-          })
-
-          .catch(why => {
-            sails.log.error(why);
-            deferred.reject(why);
-          });
-
-        return deferred.promise;
+    return queryFunc1()
+      .then(queryFunc2)
+      .then(queryFunc3)
+      .then(queryFunc4)
+      .then(queryFunc5)
+      .catch(why => {
+        sails.log.error(why);
+        return why
       });
   },
 
@@ -2880,7 +2876,7 @@ module.exports = {
         user: id
       }).populateAll();
       if (requisition.length) {
-        const requisionData = _lo.groupBy(requisition, 'primary');
+        const requisionData = commonUtils.groupBy(requisition, 'primary');
         const requisitionHeader = [
           translation.title,
           translation.assignBy,

@@ -5,8 +5,7 @@
  * @docs        :: http://sailsjs.org/#!documentation/models
  */
 
-const { ident } = require('pg-escape');
-const Q = require('q');
+const commonUtils = require('../utils/common')
 
 module.exports = {
   attributes: {
@@ -36,6 +35,11 @@ module.exports = {
       type: 'json'
     },
 
+    /**
+     * Retrieves the value of the variable for a specific language.
+     * @param {string} language - The language code.
+     * @returns {string} - The value of the variable in the specified language.
+     */
     getLanguageValue: function(language) {
       const variable = this.toObject();
       const value =
@@ -43,6 +47,12 @@ module.exports = {
       return value;
     }
   },
+
+  /**
+   * Retrieves the first available language value from a variable.
+   * @param {Object} variable - The variable object.
+   * @returns {string} - The first language value found.
+   */
   getFirstLanguage: function(variable) {
     let value = '';
     for (const v in variable.value) {
@@ -54,9 +64,16 @@ module.exports = {
     }
     return value;
   },
+
+  /**
+   * Caches variables by their identity and language.
+   * @param {Array} variables - The array of variable objects.
+   * @param {string} language - The language code.
+   * @returns {Object} - The cached variables.
+   */
   varCache: function(variables, language) {
     const vCache = {};
-    for (let i = 0; i < _.size(variables); i++) {
+    for (let i = 0; i < commonUtils.size(variables); i++) {
       const v = variables[i] || {};
       if (!v.value || !v.identity) {
         continue;
@@ -66,63 +83,45 @@ module.exports = {
     return vCache;
   },
 
-  /*
-   * mergeVariables
-   *
-   * This is where we can merge our variables to make it so that
-   * we favor the domain-centric vars over the site
-   *
-   * @param {Collection} variables - all the variables
-   * @param {Object|Integer} domain - the domain
-   * @return {Collection} the altered variables
+  /**
+   * Merges variables, prioritizing domain-specific variables over site-wide ones.
+   * @param {Array} variables - The collection of variables.
+   * @param {Object|number} domain - The domain object or ID.
+   * @returns {Promise<Array>} - The merged variables.
    */
   mergeVariables: async function(variables, domain) {
-    /*
-     * If we are null domain, move on
-     */
     if (!domain) {
       return variables;
     }
 
     Utils.itsRequired(variables);
-    const nullVars = _.where(variables, { domain: null });
-    const dVars = _.filter(variables, v => {
+    const nullVars = commonUtils.where(variables, { domain: null });
+    const dVars = commonUtils.filter(variables, v => {
       return Variable.getId(v.domain) != null;
     });
     const dWhere = {};
-    // lets stick this in an object so we have
-    // constant time searching for the variables
-    _.each(dVars, function(dvar) {
+    commonUtils.each(dVars, function(dvar) {
       dWhere[dvar.identity] = dvar;
     });
-    // this will be the array we send back
     const alteredVars = [];
-    // dont repeat
     const repeats = {};
-    // do the nulls
-    _.each(nullVars, function(nulls) {
+    commonUtils.each(nullVars, function(nulls) {
       const identity = nulls.identity;
       const key = nulls.key;
-      // if we have a variable that is the same as the domain,
-      // favor this one
       if (
         dWhere[identity] &&
         dWhere[identity].key === key &&
         repeats[identity] !== key
       ) {
-        const clone = _.clone(dWhere[identity]);
+        const clone = commonUtils.clone(dWhere[identity]);
         alteredVars.push(clone);
-        // delet this variable
         repeats[identity] = key;
         delete dWhere[identity];
       } else if (repeats[identity] !== key) {
-        // otherwise push the null to altered
         alteredVars.push(nulls);
       }
     });
-    // now stuff any leftovers into the vars
-    _.each(dWhere, function(leftover) {
-      // we only want unique records
+    commonUtils.each(dWhere, function(leftover) {
       if (!repeats[leftover.identity] !== leftover.key) {
         alteredVars.push(leftover);
       }
@@ -131,73 +130,82 @@ module.exports = {
     return alteredVars;
   },
 
+  /**
+   * Resolves keys from schemas and unions them with existing keys.
+   * @param {Array} schemas - The array of schema objects.
+   * @param {Array} union - The array of keys to union with.
+   * @returns {Array} - The resolved keys.
+   */
   resolveKeys: function(schemas, union) {
     const variables = [];
 
-    _.each(schemas, scheme => {
-      _.each(scheme.schema, s => {
+    commonUtils.each(schemas, scheme => {
+      commonUtils.each(scheme.schema, s => {
         if (s.type === 'variable' && s.active) {
           variables.push(s.name);
         }
       });
     });
 
-    return _.union(variables, union || []);
+    return commonUtils.union(variables, union || []);
   },
 
-  /*
-   * resolveVariables
-   *
-   * resoves variables parameters found in nodes
-   * @param {String} scheme - the node scheme with vars
-   * @param {Object} extras - any extras that need resoution for concatination
-   * @param {Boolean} collate - the ability to concat the extras
-   * @return {Promise} - the variables that need resolution
+  /**
+   * Resolves variables from a scheme, with optional extras and collation.
+   * @param {string} scheme - The node scheme with variables.
+   * @param {Object} extras - Additional variables for resolution.
+   * @param {boolean} collate - Whether to concatenate extras.
+   * @returns {Promise<Array>} - The resolved variables.
    */
   resolveVariables: function(scheme, extras, collate) {
-    const deferred = Q.defer();
-    const getVariable = function(variables) {
-      if (variables && !variables.length) {
-        return deferred.resolve(variables);
-      }
-
-      Variable.find({
-        key: variables
-      })
-        .populateAll()
-        .exec((err, vars) => {
-          if (err) {
-            return deferred.reject(err);
-          }
-
-          deferred.resolve(vars);
-        });
-    };
-
-    let formulate = [];
-
-    if (collate) {
-      _.each(scheme, s => {
-        const col = s[collate];
-        if (col && col.length) {
-          _.each(col, c => {
-            formulate.push(c);
+    return new Promise((resolve, reject) => {
+      const getVariable = function(variables) {
+        if (variables && !variables.length) {
+          return resolve(variables);
+        }
+  
+        Variable.find({
+          key: variables
+        })
+          .populateAll()
+          .exec((err, vars) => {
+            if (err) {
+              return reject(err);
+            }
+  
+            resolve(vars);
           });
+      };
+  
+      let formulate = [];
+  
+      if (collate) {
+        commonUtils.each(scheme, s => {
+          const col = s[collate];
+          if (col && col.length) {
+            commonUtils.each(col, c => {
+              formulate.push(c);
+            });
+          }
+        });
+      } else {
+        formulate = scheme;
+      }
+      const variables = [];
+      commonUtils.each(formulate, s => {
+        if (s.type === 'variable' && s.active) {
+          variables.push(s.name);
         }
       });
-    } else {
-      formulate = scheme;
-    }
-    const variables = [];
-    _.each(formulate, s => {
-      if (s.type === 'variable' && s.active) {
-        variables.push(s.name);
-      }
-    });
-    getVariable(_.unique(_.union(variables, extras || [])));
-    return deferred.promise;
+      getVariable(commonUtils.unique(commonUtils.union(variables, extras || [])));
+    })
   },
 
+  /**
+   * Hook to perform actions before destroying a variable.
+   * @param {Object} values - The values to destroy.
+   * @param {Function} next - The callback function.
+   */
   beforeDestroy: function(values, next) {
     const id = (values.where || values).id;
 
@@ -219,19 +227,23 @@ module.exports = {
     });
   },
 
+  /**
+   * Pulls import data from values and updates them.
+   * @param {Object} values - The values containing import data.
+   * @param {Function} next - The callback function.
+   */
   pullImports: function(values, next) {
-    // if we don't have import data, lets go
     if (!values.meta || !values.meta.import) {
       return next();
     }
-    const importValues = _.clone(values.meta.import);
+    const importValues = commonUtils.clone(values.meta.import);
     delete values.meta.import;
     const stringValues = [];
-    _.each(importValues, imp => {
+    commonUtils.each(importValues, imp => {
       stringValues.push(imp);
     });
 
-    if (!_.size(stringValues)) {
+    if (!commonUtils.size(stringValues)) {
       return next();
     }
 
@@ -239,12 +251,12 @@ module.exports = {
       if (err) {
         return next(err);
       }
-      _.each(importValues, (obj, key) => {
-        const found = _.where(variables, {
+      commonUtils.each(importValues, (obj, key) => {
+        const found = commonUtils.where(variables, {
           key: obj.key,
           identity: obj.identity
         });
-        if (_.size(found)) {
+        if (commonUtils.size(found)) {
           values[key] = (found[0] || {}).id;
         }
       });
@@ -253,26 +265,30 @@ module.exports = {
     });
   },
 
+  /**
+   * Retrieves variables based on parameters.
+   * @param {Object|Array} params - The parameters for retrieval.
+   * @param {Function} cb - The callback function.
+   */
   pullType: function(params, cb) {
     if (
       !params ||
-      (_.isObject(params) &&
-        !_.isArray(params) &&
+      (commonUtils.isObject(params) &&
+        !commonUtils.isArray(params) &&
         !(params.key || params.identity))
     ) {
       return cb('warning.INVALID_REQUEST');
     }
 
     let query;
-    if (_.isArray(params)) {
+    if (commonUtils.isArray(params)) {
       if (params.length) {
         const arrQ = { or: params };
         query = sails.models.variable.find(arrQ);
-      } // if it is empty, do not search
-      else {
+      } else {
         return cb(null, []);
       }
-    } else if (_.isObject(params)) {
+    } else if (commonUtils.isObject(params)) {
       const q = {
         key: params.key,
         identity: params.identity
@@ -285,7 +301,7 @@ module.exports = {
         sails.log.error(err);
         return cb(err);
       }
-      if (!_.size(models)) {
+      if (!commonUtils.size(models)) {
         return cb('errors.UNDEFINED_VARIABLE_MODELS');
       }
 
@@ -293,15 +309,29 @@ module.exports = {
     });
   },
 
+  /**
+   * Returns the CSV identity fields for a variable.
+   * @returns {Array} - The array of CSV identity fields.
+   */
   csvIdentity: function() {
     return ['identity'];
   },
 
+  /**
+   * Checks if a parameter is variable-like.
+   * @param {Object} param - The parameter to check.
+   * @returns {boolean} - True if the parameter is variable-like, false otherwise.
+   */
   isVariableLike: function(param) {
     const inType = ['variable', 'multi_select'];
     return inType.indexOf(param.type) !== -1;
   },
 
+  /**
+   * Asynchronously retrieves variables based on parameters.
+   * @param {Object|Array} params - The parameters for retrieval.
+   * @returns {Promise<Array>} - The retrieved variables.
+   */
   pullTypeAsync: function(params) {
     return new Promise((resolve, reject) => {
       this.pullType(params, (err, vars) => {
@@ -313,6 +343,11 @@ module.exports = {
     });
   },
 
+  /**
+   * Finds a variable by its parameter name.
+   * @param {Object} param - The parameter object.
+   * @returns {Promise<Object>} - The found variable.
+   */
   findVariableByParamName: async function(param) {
     const tIdentiy = Translates.translateIdentity;
     const variable = await Variable.find().where({
@@ -322,6 +357,11 @@ module.exports = {
     return variable.pop();
   },
 
+  /**
+   * Retrieves the machine parameter name for a variable.
+   * @param {Object} variable - The variable object.
+   * @returns {string} - The machine parameter name.
+   */
   getMachineParamName: function(variable) {
     const identity = variable.identity;
     const stripped = (identity || '')
@@ -330,6 +370,10 @@ module.exports = {
     return stripped.toLowerCase();
   },
 
+  /**
+   * Retrieves station variables for nodes.
+   * @returns {Promise<Object>} - The station variables.
+   */
   getStationVarsForNodes: async function() {
     const paramHold = {};
     const stationValues = [
@@ -350,11 +394,15 @@ module.exports = {
     return paramHold;
   },
 
-  getLanguageContent: async function(
-    identity,
-    lang = Translates.fallbackLanguage,
-    key = Translates.translateIdentity
-  ) {
+  /**
+   * Retrieves language content for a variable.
+   * @param {string} identity - The variable identity.
+   * @param {string} [lang=Translates.fallbackLanguage] - The language code.
+   * @param {string} [key=Translates.translateIdentity] - The key for translation.
+   * @returns {Promise<string>} - The language content.
+   * @throws Will throw an error if the identity is not found.
+   */
+  getLanguageContent: async function(identity, lang = Translates.fallbackLanguage, key = Translates.translateIdentity) {
     if (!identity) {
       throw new Error('Variable identity is required');
     }
@@ -367,6 +415,11 @@ module.exports = {
     return value.getLanguageValue(lang);
   },
 
+  /**
+   * Retrieves label variables for a schema.
+   * @param {Array} [schema=[]] - The schema array.
+   * @returns {Promise<Object>} - The label variables.
+   */
   getLabelVars: async function(schema = []) {
     const paramHold = await this.getStationVarsForNodes();
     for (let i = 0; i < schema.length; i++) {
@@ -377,6 +430,11 @@ module.exports = {
     return paramHold;
   },
 
+  /**
+   * Retrieves parameter variables for a schema.
+   * @param {Array} [schema=[]] - The schema array.
+   * @returns {Promise<Object>} - The parameter variables.
+   */
   getParamVars: async function(schema = []) {
     const searchVariables = [];
     for (let i = 0; i < schema.length; i++) {
@@ -398,6 +456,11 @@ module.exports = {
     return send;
   },
 
+  /**
+   * Retrieves schema variables, including labels and parameters.
+   * @param {Array} [schema=[]] - The schema array.
+   * @returns {Promise<Object>} - The schema variables.
+   */
   getSchemaVariables: async function(schema = []) {
     const send = {};
     send.labels = await this.getLabelVars(schema);

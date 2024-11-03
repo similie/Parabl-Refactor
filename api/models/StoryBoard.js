@@ -5,6 +5,8 @@
  * @docs        :: https://sailsjs.com/docs/concepts/models-and-orm/models
  */
 
+const commonUtils = require('../utils/common')
+
 module.exports = {
   migrate: process.env.MIGRATION || "safe",
   attributes: {
@@ -33,8 +35,13 @@ module.exports = {
     }
   },
 
+  /**
+   * Sets the stories for the given models, organizing them by chapters.
+   * @param {Object|Array} models - The model or array of models to set stories for.
+   * @returns {Promise<Object|Array>} - The updated model(s) with stories set.
+   */
   setStories: async function(models) {
-    if (!_.size(models)) {
+    if (!commonUtils.size(models)) {
       return models;
     }
     let storyIds = [];
@@ -51,18 +58,18 @@ module.exports = {
       };
     };
 
-    if (_.isArray(models)) {
-      _.each(models, m => {
+    if (commonUtils.isArray(models)) {
+      commonUtils.each(models, m => {
         m.stories = StoryChapter.sortChapters(m.stories);
-        _.each(m.stories, setModel(m));
+        commonUtils.each(m.stories, setModel(m));
       });
     } else {
       models.stories = StoryChapter.sortChapters(models.stories);
-      _.each(models.stories, setModel(models));
+      commonUtils.each(models.stories, setModel(models));
       array = false;
     }
 
-    if (!_.size(storyIds)) {
+    if (!commonUtils.size(storyIds)) {
       return models;
     }
 
@@ -72,9 +79,9 @@ module.exports = {
     const storyHold = storyCache(stories);
 
     if (array) {
-      _.each(models, m => {
-        const chapter = _.clone(m.__chapters);
-        _.each(chapter, (value, id) => {
+      commonUtils.each(models, m => {
+        const chapter = commonUtils.clone(m.__chapters);
+        commonUtils.each(chapter, (value, id) => {
           if (value) {
             m.__chapters[id] = storyHold[id];
           }
@@ -84,22 +91,27 @@ module.exports = {
       models.__chapters = storyHold;
     }
     return models;
+  },
+
+  /**
+   * Caches the node stories by their IDs.
+   * @param {Array} nodeStories - The array of node stories to cache.
+   * @returns {Object} - A cache object mapping story IDs to node stories.
+   */
+  storyCache: function(nodeStories) {
+    const cache = {};
+    commonUtils.each(nodeStories, function(ns) {
+      cache[ns.id] = ns;
+    });
+    return cache;
   }
 };
 
 // function storyObject(stories, nodeStories) {
 //   const cache = storyCache(nodeStories);
 //   const arr = [];
-//   _.each(stories, function(s) {
+//   commonUtils.each(stories, function(s) {
 //     arr.push(cache[s]);
 //   });
 //   return arr;
 // }
-
-function storyCache(nodeStories) {
-  const cache = {};
-  _.each(nodeStories, function(ns) {
-    cache[ns.id] = ns;
-  });
-  return cache;
-}
